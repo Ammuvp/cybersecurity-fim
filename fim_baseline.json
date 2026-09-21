@@ -1,0 +1,9 @@
+{
+    "directory": "/home/kali/cybersecurity-fim/testdata",
+    "algorithm": "SHA-256",
+    "files": {
+        "config.txt": "4f0e94ebc3a8a26f8b68d3525b8b4a710c47302a4b5cc725a180efb8eeb168b6",
+        "document.txt": "cb0b8981234ebd6c2c5ae422e1fca675fb89b7f1ef61bd1fbdfa440ba94a10c4",
+        "users.txt": "77f405d3e2688a40795ad3805a1598c124223ba2a9ae6c9e2da876483d26dd63"
+    }
+}
