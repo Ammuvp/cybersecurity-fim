@@ -3,14 +3,15 @@
 """
 Automated File Integrity Monitor (FIM).
 
-Creates and checks SHA-256 integrity baselines for files
-inside a selected directory.
+Creates, checks, and continuously monitors SHA-256 file integrity
+baselines for files inside a selected directory.
 """
 
 import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
 
@@ -78,8 +79,8 @@ def create_baseline(directory):
     print(f"[+] Files recorded: {len(hashes)}")
 
 
-def check_integrity(directory):
-    """Compare current files against the stored baseline."""
+def load_baseline():
+    """Load the stored integrity baseline."""
     if not BASELINE_FILE.exists():
         raise RuntimeError(
             f"Baseline file not found: {BASELINE_FILE}"
@@ -88,14 +89,17 @@ def check_integrity(directory):
     try:
         with BASELINE_FILE.open("r", encoding="utf-8") as file:
             baseline_data = json.load(file)
+
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(
             f"Unable to read baseline: {exc}"
         ) from exc
 
-    baseline_files = baseline_data.get("files", {})
-    current_files = collect_file_hashes(directory)
+    return baseline_data
 
+
+def compare_files(baseline_files, current_files):
+    """Compare baseline hashes with current file hashes."""
     modified = []
     created = []
     deleted = []
@@ -110,8 +114,11 @@ def check_integrity(directory):
         if file_path not in baseline_files:
             created.append(file_path)
 
-    print("\n=== File Integrity Check ===")
+    return modified, created, deleted
 
+
+def print_changes(modified, created, deleted):
+    """Print detected file changes."""
     if modified:
         print("\n[!] MODIFIED FILES:")
         for file_path in modified:
@@ -128,12 +135,64 @@ def check_integrity(directory):
             print(f"    - {file_path}")
 
     if not modified and not created and not deleted:
-        print("\n[OK] No changes detected.")
+        print("[OK] No changes detected.")
+
+
+def check_integrity(directory):
+    """Compare current files against the stored baseline."""
+    baseline_data = load_baseline()
+    baseline_files = baseline_data.get("files", {})
+
+    current_files = collect_file_hashes(directory)
+
+    modified, created, deleted = compare_files(
+        baseline_files,
+        current_files
+    )
+
+    print("\n=== File Integrity Check ===")
+    print_changes(modified, created, deleted)
 
     print("\n=== Summary ===")
     print(f"Modified: {len(modified)}")
     print(f"Created:  {len(created)}")
     print(f"Deleted:  {len(deleted)}")
+
+    return modified, created, deleted
+
+
+def monitor_directory(directory, interval):
+    """Continuously monitor a directory for file changes."""
+    baseline_data = load_baseline()
+    baseline_files = baseline_data.get("files", {})
+
+    print("\n=== File Integrity Monitor ===")
+    print(f"Directory: {directory}")
+    print(f"Interval:  {interval} seconds")
+    print("Monitoring started. Press Ctrl+C to stop.\n")
+
+    previous_files = collect_file_hashes(directory)
+
+    while True:
+        time.sleep(interval)
+
+        current_files = collect_file_hashes(directory)
+
+        modified, created, deleted = compare_files(
+            previous_files,
+            current_files
+        )
+
+        if modified or created or deleted:
+            print("\n=== CHANGE DETECTED ===")
+            print_changes(modified, created, deleted)
+
+            print("\n=== Summary ===")
+            print(f"Modified: {len(modified)}")
+            print(f"Created:  {len(created)}")
+            print(f"Deleted:  {len(deleted)}")
+
+            previous_files = current_files
 
 
 def parse_arguments():
@@ -169,6 +228,24 @@ def parse_arguments():
         help="Directory to check."
     )
 
+    monitor_parser = subparsers.add_parser(
+        "monitor",
+        help="Continuously monitor a directory for changes."
+    )
+
+    monitor_parser.add_argument(
+        "--directory",
+        required=True,
+        help="Directory to monitor."
+    )
+
+    monitor_parser.add_argument(
+        "--interval",
+        type=float,
+        default=2,
+        help="Monitoring interval in seconds (default: 2)."
+    )
+
     return parser.parse_args()
 
 
@@ -192,14 +269,21 @@ def main():
     elif args.command == "check":
         check_integrity(directory)
 
+    elif args.command == "monitor":
+        if args.interval <= 0:
+            print("[!] Error: Interval must be greater than 0.")
+            sys.exit(1)
+
+        monitor_directory(directory, args.interval)
+
 
 if __name__ == "__main__":
     try:
         main()
 
     except KeyboardInterrupt:
-        print("\n[!] Operation cancelled by user.")
-        sys.exit(1)
+        print("\n[!] Monitoring stopped by user.")
+        sys.exit(0)
 
     except Exception as exc:
         print(f"[!] Error: {exc}")
